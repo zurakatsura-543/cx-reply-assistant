@@ -1,6 +1,15 @@
 import { Bot, Check, Database, History, Pencil, Plus, RefreshCw, Send, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
-import { generateReply, retrieveContext } from "./ai";
+import { useEffect, useMemo, useState } from "react";
+import {
+  approveAiReply,
+  createKnowledgeEntry,
+  deleteKnowledgeEntry,
+  generateAiReply,
+  getBrands,
+  getConversations,
+  sendMessage,
+  updateKnowledgeEntry
+} from "./api";
 import { initialBrands, initialConversations, policyTypes } from "./data";
 import type {
   AiLog,
@@ -21,7 +30,11 @@ export function App() {
   const [suggestion, setSuggestion] = useState<AiSuggestion | null>(null);
   const [editedReply, setEditedReply] = useState("");
   const [logs, setLogs] = useState<AiLog[]>([]);
+  const [retrievedContext, setRetrievedContext] = useState<KnowledgeBaseEntry[]>([]);
   const [activeKbBrandId, setActiveKbBrandId] = useState(initialBrands[0].id);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [kbDraft, setKbDraft] = useState<{ type: PolicyType; title: string; body: string }>({
     type: "Return policy",
     title: "",
@@ -35,71 +48,119 @@ export function App() {
     .reverse()
     .find((message) => message.sender === "customer");
 
-  const retrievedContext = useMemo(() => {
-    return retrieveContext(latestCustomerMessage?.text || "", brand);
-  }, [brand, latestCustomerMessage?.text]);
+  useEffect(() => {
+    async function loadWorkspace() {
+      try {
+        const [apiBrands, apiConversations] = await Promise.all([getBrands(), getConversations()]);
+        setBrands(apiBrands);
+        setConversations(apiConversations);
+        setActiveConversationId(apiConversations[0]?.id ?? initialConversations[0].id);
+        setActiveKbBrandId(apiBrands[0]?.id ?? initialBrands[0].id);
+        setApiError(null);
+      } catch (error) {
+        setApiError("Could not reach the NestJS API. Start it with npm run dev:api.");
+      } finally {
+        setIsLoading(false);
+      }
+    }
 
-  function addMessage(sender: MessageSender, text: string) {
-    if (!text.trim()) return;
-    const message = {
-      id: `m-${Date.now()}`,
-      sender,
-      text: text.trim(),
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    };
+    void loadWorkspace();
+  }, []);
 
-    setConversations((current) =>
-      current.map((item) =>
-        item.id === conversation.id ? { ...item, messages: [...item.messages, message] } : item
-      )
-    );
-    setDraft("");
+  useEffect(() => {
     setSuggestion(null);
     setEditedReply("");
+    setRetrievedContext([]);
+  }, [activeConversationId, latestCustomerMessage?.text]);
+
+  const activeLog = useMemo(() => logs[0], [logs]);
+
+  async function addMessage(sender: MessageSender, text: string) {
+    if (!text.trim()) return;
+    try {
+      const updatedConversation = await sendMessage(conversation.id, sender, text);
+      setConversations((current) =>
+        current.map((item) => (item.id === conversation.id ? updatedConversation : item))
+      );
+      setDraft("");
+      setSuggestion(null);
+      setEditedReply("");
+      setRetrievedContext([]);
+      setApiError(null);
+    } catch (error) {
+      setApiError("Could not send message through the API.");
+    }
   }
 
-  function handleGenerate() {
-    const result = generateReply({ brand, conversation, retrievedContext });
-    setSuggestion(result);
-    setEditedReply(result.text);
-    setLogs((current) => [
-      {
-        id: `log-${Date.now()}`,
-        customerMessage: latestCustomerMessage?.text || "",
-        brand: brand.name,
-        context: retrievedContext,
-        aiResponse: result.text,
-        editedResponse: "",
-        finalResponse: "",
-        timestamp: new Date().toISOString()
-      },
-      ...current
-    ]);
+  async function handleGenerate() {
+    setIsGenerating(true);
+    try {
+      const result = await generateAiReply(conversation.id, Boolean(suggestion));
+      setSuggestion(result.suggestion);
+      setEditedReply(result.suggestion.text);
+      setRetrievedContext(result.retrievedContext);
+      setLogs((current) => [
+        {
+          id: result.log.id,
+          customerMessage: result.log.customerMessage,
+          brand: brand.name,
+          context: result.retrievedContext,
+          aiResponse: result.log.aiGeneratedResponse,
+          editedResponse: "",
+          finalResponse: result.log.finalResponse ?? "",
+          timestamp: result.log.createdAt
+        },
+        ...current
+      ]);
+      setApiError(null);
+    } catch (error) {
+      setApiError("Could not generate an AI reply through the API.");
+    } finally {
+      setIsGenerating(false);
+    }
   }
 
-  function approveReply() {
+  async function approveReply() {
     if (!editedReply.trim()) return;
-    addMessage("agent", editedReply);
-    setLogs((current) =>
-      current.map((log, index) =>
-        index === 0 ? { ...log, editedResponse: editedReply, finalResponse: editedReply } : log
-      )
-    );
+    try {
+      const result = await approveAiReply(conversation.id, editedReply);
+      setConversations((current) =>
+        current.map((item) => (item.id === conversation.id ? result.conversation : item))
+      );
+      setLogs((current) =>
+        current.map((log, index) =>
+          index === 0 ? { ...log, editedResponse: editedReply, finalResponse: editedReply } : log
+        )
+      );
+      setSuggestion(null);
+      setEditedReply("");
+      setRetrievedContext([]);
+      setApiError(null);
+    } catch (error) {
+      setApiError("Could not approve the AI reply through the API.");
+    }
   }
 
-  function addKbEntry() {
+  async function addKbEntry() {
     if (!kbDraft.title.trim() || !kbDraft.body.trim()) return;
-    setBrands((current) =>
-      current.map((item) =>
-        item.id === activeKbBrand.id
-          ? { ...item, policies: [...item.policies, { id: `kb-${Date.now()}`, ...kbDraft }] }
-          : item
-      )
-    );
-    setKbDraft({ type: "Return policy", title: "", body: "" });
+    try {
+      const createdEntry = await createKnowledgeEntry(activeKbBrand.id, kbDraft);
+      setBrands((current) =>
+        current.map((item) =>
+          item.id === activeKbBrand.id
+            ? { ...item, policies: [...item.policies, createdEntry] }
+            : item
+        )
+      );
+      setKbDraft({ type: "Return policy", title: "", body: "" });
+      setApiError(null);
+    } catch (error) {
+      setApiError("Could not create the knowledge base entry.");
+    }
   }
 
-  function updateKbEntry(entryId: string, field: keyof KnowledgeBaseEntry, value: string) {
+  async function updateKbEntry(entryId: string, field: keyof KnowledgeBaseEntry, value: string) {
+    const previousBrands = brands;
     setBrands((current) =>
       current.map((item) =>
         item.id === activeKbBrand.id
@@ -112,16 +173,29 @@ export function App() {
           : item
       )
     );
+    try {
+      await updateKnowledgeEntry(activeKbBrand.id, entryId, { [field]: value });
+      setApiError(null);
+    } catch (error) {
+      setBrands(previousBrands);
+      setApiError("Could not update the knowledge base entry.");
+    }
   }
 
-  function deleteKbEntry(entryId: string) {
-    setBrands((current) =>
-      current.map((item) =>
-        item.id === activeKbBrand.id
-          ? { ...item, policies: item.policies.filter((entry) => entry.id !== entryId) }
-          : item
-      )
-    );
+  async function deleteKbEntry(entryId: string) {
+    try {
+      await deleteKnowledgeEntry(activeKbBrand.id, entryId);
+      setBrands((current) =>
+        current.map((item) =>
+          item.id === activeKbBrand.id
+            ? { ...item, policies: item.policies.filter((entry) => entry.id !== entryId) }
+            : item
+        )
+      );
+      setApiError(null);
+    } catch (error) {
+      setApiError("Could not delete the knowledge base entry.");
+    }
   }
 
   return (
@@ -140,6 +214,9 @@ export function App() {
           </button>
         </div>
       </section>
+
+      {isLoading && <div className="status-banner">Loading workspace from NestJS API...</div>}
+      {apiError && <div className="status-banner error">{apiError}</div>}
 
       <section className="workspace">
         <aside className="sidebar">
@@ -220,7 +297,7 @@ export function App() {
           </div>
           <button className="primary-action" onClick={handleGenerate}>
             <RefreshCw size={16} />
-            {suggestion ? "Regenerate Reply" : "Generate Reply"}
+            {isGenerating ? "Generating..." : suggestion ? "Regenerate Reply" : "Generate Reply"}
           </button>
 
           <div className="context-box">
@@ -344,6 +421,11 @@ export function App() {
               {log.finalResponse && (
                 <p>
                   <strong>Final:</strong> {log.finalResponse}
+                </p>
+              )}
+              {activeLog?.id === log.id && !log.finalResponse && (
+                <p>
+                  <strong>Status:</strong> Waiting for agent approval
                 </p>
               )}
             </article>

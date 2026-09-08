@@ -22,20 +22,17 @@ This app demonstrates a focused customer support workflow where an agent can rev
 - Database target: PostgreSQL/Supabase
 - AI target: OpenAI-compatible API such as OpenRouter
 
-The current implementation includes a typed frontend and a NestJS API skeleton. The UI still uses local state for fast reviewer testing; the API models the server-side boundaries that would be connected to PostgreSQL in the production version.
+The current implementation includes a typed frontend and a NestJS API. The frontend calls the API for conversations, message sending, brand KB management, AI reply generation, and approval. The API currently uses in-memory seed data while the PostgreSQL schema documents the production persistence model.
 
 ## Local Setup
 
 ```bash
 npm install
-npm run dev
-```
-
-Run the backend in a separate terminal:
-
-```bash
 npm run dev:api
+npm run dev:web
 ```
+
+Run `dev:api` and `dev:web` in separate terminals during local development.
 
 ## Planned Production Additions
 

@@ -53,6 +53,20 @@ export const initialBrands: Brand[] = [
         title: "Refund eligibility",
         body:
           "Refunds are issued only after warehouse inspection. Opened supplements are not refundable unless damage or leakage is verified within 48 hours of delivery."
+      },
+      {
+        id: "un-shipping",
+        type: "Shipping policy",
+        title: "Shipping and replacements",
+        body:
+          "Orders ship in 2-4 business days. Approved replacement products are shipped after the original claim is verified by support."
+      },
+      {
+        id: "un-cancel",
+        type: "Cancellation policy",
+        title: "Cancellation before dispatch",
+        body:
+          "Orders can be cancelled before dispatch. Once shipped, cancellation is unavailable and the return policy applies."
       }
     ]
   }

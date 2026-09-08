@@ -47,6 +47,22 @@ button {
   margin-bottom: 18px;
 }
 
+.status-banner {
+  max-width: 1480px;
+  margin: 0 auto 16px;
+  padding: 10px 12px;
+  border: 1px solid #b9d2ca;
+  border-radius: 8px;
+  color: #17473f;
+  background: #e9f5f1;
+}
+
+.status-banner.error {
+  border-color: #efc0b8;
+  color: #85231d;
+  background: #fde9e6;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: #68757c;
