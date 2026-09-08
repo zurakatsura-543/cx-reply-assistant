@@ -1,0 +1,21 @@
+{
+  "name": "cx-reply-assistant",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/web",
+    "apps/api"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @cx-assistant/web",
+    "dev:web": "npm run dev --workspace @cx-assistant/web",
+    "dev:api": "npm run start:dev --workspace @cx-assistant/api",
+    "build": "npm run build --workspace @cx-assistant/web && npm run build --workspace @cx-assistant/api",
+    "build:web": "npm run build --workspace @cx-assistant/web",
+    "build:api": "npm run build --workspace @cx-assistant/api",
+    "lint": "npm run lint --workspace @cx-assistant/web && npm run lint --workspace @cx-assistant/api"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}
