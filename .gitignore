@@ -5,3 +5,4 @@ apps/*/dist
 .env
 .env.local
 .DS_Store
+LOCAL_CODEX_HANDOFF.md
