@@ -83,7 +83,7 @@ values
     'd1111111-1111-1111-1111-111111111111',
     'customer',
     'My order was delivered but the bottle is broken. What can I do?',
-    '2026-09-08T10:07:00.000Z'
+    '2026-09-08T06:07:00.000Z'
   ),
   (
     'e2222222-2222-2222-2222-222222222222',
@@ -91,7 +91,7 @@ values
     'd2222222-2222-2222-2222-222222222222',
     'customer',
     'I received this 20 days ago. Can I get a refund?',
-    '2026-09-08T12:45:00.000Z'
+    '2026-09-08T06:45:00.000Z'
   )
 on conflict (id) do nothing;
 

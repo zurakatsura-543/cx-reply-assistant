@@ -27,13 +27,14 @@ export function App() {
   const [activeConversationId, setActiveConversationId] = useState(initialConversations[0].id);
   const [mode, setMode] = useState<MessageSender>("agent");
   const [draft, setDraft] = useState("");
-  const [suggestion, setSuggestion] = useState<AiSuggestion | null>(null);
-  const [editedReply, setEditedReply] = useState("");
+  const [suggestionsByConversation, setSuggestionsByConversation] = useState<Record<string, AiSuggestion | null>>({});
+  const [editedRepliesByConversation, setEditedRepliesByConversation] = useState<Record<string, string>>({});
   const [logs, setLogs] = useState<AiLog[]>([]);
-  const [retrievedContext, setRetrievedContext] = useState<KnowledgeBaseEntry[]>([]);
+  const [contextByConversation, setContextByConversation] = useState<Record<string, KnowledgeBaseEntry[]>>({});
   const [activeKbBrandId, setActiveKbBrandId] = useState(initialBrands[0].id);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [kbDraft, setKbDraft] = useState<{ type: PolicyType; title: string; body: string }>({
     type: "Return policy",
@@ -44,6 +45,9 @@ export function App() {
   const conversation = conversations.find((item) => item.id === activeConversationId) ?? conversations[0];
   const brand = brands.find((item) => item.id === conversation.brandId) ?? brands[0];
   const activeKbBrand = brands.find((item) => item.id === activeKbBrandId) ?? brands[0];
+  const suggestion = suggestionsByConversation[conversation.id] ?? null;
+  const editedReply = editedRepliesByConversation[conversation.id] ?? "";
+  const retrievedContext = contextByConversation[conversation.id] ?? [];
   const latestCustomerMessage = [...conversation.messages]
     .reverse()
     .find((message) => message.sender === "customer");
@@ -67,12 +71,6 @@ export function App() {
     void loadWorkspace();
   }, []);
 
-  useEffect(() => {
-    setSuggestion(null);
-    setEditedReply("");
-    setRetrievedContext([]);
-  }, [activeConversationId, latestCustomerMessage?.text]);
-
   const activeLog = useMemo(() => logs[0], [logs]);
 
   async function addMessage(sender: MessageSender, text: string) {
@@ -83,9 +81,9 @@ export function App() {
         current.map((item) => (item.id === conversation.id ? updatedConversation : item))
       );
       setDraft("");
-      setSuggestion(null);
-      setEditedReply("");
-      setRetrievedContext([]);
+      setSuggestionsByConversation((current) => ({ ...current, [conversation.id]: null }));
+      setEditedRepliesByConversation((current) => ({ ...current, [conversation.id]: "" }));
+      setContextByConversation((current) => ({ ...current, [conversation.id]: [] }));
       setApiError(null);
     } catch (error) {
       setApiError("Could not send message through the API.");
@@ -96,9 +94,9 @@ export function App() {
     setIsGenerating(true);
     try {
       const result = await generateAiReply(conversation.id, Boolean(suggestion));
-      setSuggestion(result.suggestion);
-      setEditedReply(result.suggestion.text);
-      setRetrievedContext(result.retrievedContext);
+      setSuggestionsByConversation((current) => ({ ...current, [conversation.id]: result.suggestion }));
+      setEditedRepliesByConversation((current) => ({ ...current, [conversation.id]: result.suggestion.text }));
+      setContextByConversation((current) => ({ ...current, [conversation.id]: result.retrievedContext }));
       setLogs((current) => [
         {
           id: result.log.id,
@@ -122,6 +120,7 @@ export function App() {
 
   async function approveReply() {
     if (!editedReply.trim()) return;
+    setIsApproving(true);
     try {
       const result = await approveAiReply(conversation.id, editedReply);
       setConversations((current) =>
@@ -132,12 +131,14 @@ export function App() {
           index === 0 ? { ...log, editedResponse: editedReply, finalResponse: editedReply } : log
         )
       );
-      setSuggestion(null);
-      setEditedReply("");
-      setRetrievedContext([]);
+      setSuggestionsByConversation((current) => ({ ...current, [conversation.id]: null }));
+      setEditedRepliesByConversation((current) => ({ ...current, [conversation.id]: "" }));
+      setContextByConversation((current) => ({ ...current, [conversation.id]: [] }));
       setApiError(null);
     } catch (error) {
       setApiError("Could not approve the AI reply through the API.");
+    } finally {
+      setIsApproving(false);
     }
   }
 
@@ -229,8 +230,6 @@ export function App() {
                 key={item.id}
                 onClick={() => {
                   setActiveConversationId(item.id);
-                  setSuggestion(null);
-                  setEditedReply("");
                 }}
               >
                 <span>{item.customerName}</span>
@@ -295,7 +294,7 @@ export function App() {
             <Bot size={18} />
             <h2>AI Reply</h2>
           </div>
-          <button className="primary-action" onClick={handleGenerate}>
+          <button className="primary-action" onClick={handleGenerate} disabled={isGenerating}>
             <RefreshCw size={16} />
             {isGenerating ? "Generating..." : suggestion ? "Regenerate Reply" : "Generate Reply"}
           </button>
@@ -325,10 +324,18 @@ export function App() {
                 {suggestion.confidence}
               </span>
               <p className="guardrail">{suggestion.guardrail}</p>
-              <textarea value={editedReply} onChange={(event) => setEditedReply(event.target.value)} />
-              <button className="approve" onClick={approveReply}>
+              <textarea
+                value={editedReply}
+                onChange={(event) =>
+                  setEditedRepliesByConversation((current) => ({
+                    ...current,
+                    [conversation.id]: event.target.value
+                  }))
+                }
+              />
+              <button className="approve" onClick={approveReply} disabled={isApproving}>
                 <Check size={16} />
-                Approve & Send
+                {isApproving ? "Approving..." : "Approve & Send"}
               </button>
             </div>
           )}

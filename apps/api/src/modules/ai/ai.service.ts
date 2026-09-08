@@ -233,6 +233,16 @@ export class AiService {
     promptTokens: number | null;
     completionTokens: number | null;
   }> {
+    const deterministicGuardrail = this.getDeterministicGuardrail(brand, conversation, retrievedContext);
+    if (deterministicGuardrail) {
+      return {
+        suggestion: deterministicGuardrail,
+        modelName: "deterministic-guardrail",
+        promptTokens: null,
+        completionTokens: null
+      };
+    }
+
     const apiKey = this.configService.get<string>("OPENAI_API_KEY");
     const model = this.configService.get<string>("OPENAI_MODEL");
 
@@ -261,7 +271,7 @@ export class AiService {
             {
               role: "system",
               content:
-                "You are a CX reply assistant. Use only the provided brand knowledge. Never invent policy. Never promise refund, replacement, cancellation, or compensation unless the provided context supports it. If context is missing or the customer may be ineligible, mark confidence as Needs review and ask for verification. Return only valid JSON with keys: text, confidence, guardrail."
+                "You are a CX reply assistant. Use only the provided brand knowledge and derived date facts. Never invent policy. Never promise refund, replacement, cancellation, or compensation unless the provided context and derived dates support it. Do not say the customer is within a policy window unless the derived facts prove it. If context is missing or the customer may be ineligible, mark confidence as Needs review and ask for verification. Return only valid JSON with keys: text, confidence, guardrail."
             },
             {
               role: "user",
@@ -322,6 +332,10 @@ export class AiService {
         conversationHistory: conversation.messages,
         latestCustomerMessage:
           [...conversation.messages].reverse().find((message) => message.sender === "customer")?.text ?? "",
+        derivedFacts: {
+          currentDate: new Date().toISOString().slice(0, 10),
+          daysSinceDelivery: this.getDaysSinceDelivery(conversation)
+        },
         retrievedKnowledge: retrievedContext.map((entry) => ({
           type: entry.type,
           title: entry.title,
@@ -333,7 +347,8 @@ export class AiService {
           "Ground the answer in retrievedKnowledge only.",
           "Do not mention internal retrieval scores.",
           "If retrievedKnowledge is empty, say the applicable policy needs verification.",
-          "If the policy window may be missed, do not promise approval."
+          "If the policy window may be missed, do not promise approval.",
+          "If daysSinceDelivery is greater than a policy window, state that the case needs agent review."
         ]
       },
       null,
@@ -347,6 +362,61 @@ export class AiService {
     }
 
     return "Needs review";
+  }
+
+  private getDeterministicGuardrail(
+    brand: Brand,
+    conversation: Conversation,
+    retrievedContext: KnowledgeBaseEntry[]
+  ): AiSuggestion | null {
+    const latest = [...conversation.messages].reverse().find((message) => message.sender === "customer")?.text ?? "";
+    const lower = latest.toLowerCase();
+    const contextText = retrievedContext.map((entry) => entry.body).join(" ").toLowerCase();
+    const daysSinceDelivery = this.getDaysSinceDelivery(conversation);
+    const isDamageOrLeakage = /broken|damaged|leak|leaking|crack|bottle/.test(lower);
+
+    if (isDamageOrLeakage && daysSinceDelivery !== null && /48 hours/.test(contextText) && daysSinceDelivery > 2) {
+      return {
+        confidence: "Needs review",
+        guardrail:
+          `The order was delivered ${daysSinceDelivery} days ago, which appears outside the 48-hour damage/leakage reporting window.`,
+        text:
+          `I am sorry to hear there is an issue with your ${conversation.order.item}. Please share the photos and batch/order details so our team can review the case. Based on ${brand.name}'s policy, damage or leakage claims normally need to be verified within 48 hours of delivery, so I cannot confirm a refund or replacement until support reviews whether any exception applies.`
+      };
+    }
+
+    if (daysSinceDelivery !== null && /15 days/.test(contextText) && daysSinceDelivery > 15 && /refund|return/.test(lower)) {
+      return {
+        confidence: "Needs review",
+        guardrail:
+          `The order was delivered ${daysSinceDelivery} days ago, which appears outside the 15-day return window.`,
+        text:
+          `Thank you for reaching out. Based on ${brand.name}'s policy, this appears to be outside the standard 15-day return window. I cannot confirm a refund immediately, but I can help share the details with support for review if you provide the order details and any relevant photos.`
+      };
+    }
+
+    if (daysSinceDelivery !== null && /7 days/.test(contextText) && daysSinceDelivery > 7 && /refund|return|broken|damaged/.test(lower)) {
+      return {
+        confidence: "Needs review",
+        guardrail:
+          `The order was delivered ${daysSinceDelivery} days ago, which appears outside the 7-day refund/damage reporting window.`,
+        text:
+          `I am sorry about the trouble. Based on ${brand.name}'s policy, this may be outside the standard reporting window, so I cannot promise a refund or replacement right away. Please share the photos and order details, and our support team can review the case.`
+      };
+    }
+
+    return null;
+  }
+
+  private getDaysSinceDelivery(conversation: Conversation) {
+    const deliveredAt = new Date(conversation.order.deliveredAt);
+    if (Number.isNaN(deliveredAt.getTime())) {
+      return null;
+    }
+
+    const today = new Date();
+    const millisecondsPerDay = 24 * 60 * 60 * 1000;
+    return Math.max(0, Math.floor((today.getTime() - deliveredAt.getTime()) / millisecondsPerDay));
   }
 
   private generateGuardedReply(
