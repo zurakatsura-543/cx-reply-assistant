@@ -325,6 +325,7 @@ export function App() {
               </span>
               <p className="guardrail">{suggestion.guardrail}</p>
               <textarea
+                className="reply-editor"
                 value={editedReply}
                 onChange={(event) =>
                   setEditedRepliesByConversation((current) => ({

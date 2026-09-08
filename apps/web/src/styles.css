@@ -339,6 +339,12 @@ select {
   margin-top: 12px;
 }
 
+.reply-editor {
+  min-height: 168px;
+  max-height: 320px;
+  line-height: 1.5;
+}
+
 .confidence {
   width: fit-content;
   padding: 5px 8px;
