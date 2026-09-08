@@ -34,9 +34,41 @@ npm run dev:web
 
 Run `dev:api` and `dev:web` in separate terminals during local development.
 
+By default, the API uses in-memory seed data if `DATABASE_URL` is not set.
+
+## PostgreSQL Setup
+
+Create a local database:
+
+```bash
+createdb cx_reply_assistant
+psql cx_reply_assistant -f database/schema.sql
+psql cx_reply_assistant -f database/seed.sql
+```
+
+Create `.env` in the project root:
+
+```bash
+DATABASE_URL="postgres://postgres:postgres@localhost:5432/cx_reply_assistant"
+PORT="3000"
+WEB_ORIGIN="http://localhost:5173,http://localhost:5174"
+```
+
+Then start the API:
+
+```bash
+npm run dev:api
+```
+
+When `DATABASE_URL` exists, NestJS reads/writes PostgreSQL for:
+
+- Conversations and messages
+- Brand knowledge base entries
+- AI response logs
+- Agent-approved final responses
+
 ## Planned Production Additions
 
-- Connect the NestJS services to PostgreSQL using `DATABASE_URL`
 - Supabase Auth and tenant-scoped row-level security
 - Server-side AI generation route using an OpenAI-compatible provider
 - Deployment on Vercel

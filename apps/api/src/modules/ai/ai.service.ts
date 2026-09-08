@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { DatabaseService } from "../../database/database.service";
 import { ConversationsService } from "../conversations/conversations.service";
 import { KnowledgeBaseService } from "../knowledge-base/knowledge-base.service";
 import type { AiLog, AiSuggestion, Brand, Conversation, KnowledgeBaseEntry } from "../../types";
@@ -9,16 +10,17 @@ export class AiService {
 
   constructor(
     private readonly conversationsService: ConversationsService,
-    private readonly knowledgeBaseService: KnowledgeBaseService
+    private readonly knowledgeBaseService: KnowledgeBaseService,
+    private readonly databaseService: DatabaseService
   ) {}
 
-  generateReply(conversationId: string, _regenerate: boolean) {
-    const conversation = this.conversationsService.getConversation(conversationId);
-    const brand = this.knowledgeBaseService.getBrand(conversation.brandId);
+  async generateReply(conversationId: string, _regenerate: boolean) {
+    const conversation = await this.conversationsService.getConversation(conversationId);
+    const brand = await this.knowledgeBaseService.getBrand(conversation.brandId);
     const latestCustomerMessage = [...conversation.messages]
       .reverse()
       .find((message) => message.sender === "customer");
-    const retrievedContext = this.knowledgeBaseService.retrieveContext(
+    const retrievedContext = await this.knowledgeBaseService.retrieveContext(
       brand.id,
       latestCustomerMessage?.text ?? ""
     );
@@ -38,23 +40,156 @@ export class AiService {
       createdAt: new Date().toISOString()
     };
 
-    this.logs.unshift(log);
+    const persistedLog = await this.createLog(log);
 
     return {
       suggestion,
       retrievedContext,
-      log
+      log: persistedLog
     };
   }
 
-  approveReply(conversationId: string, editedResponse: string) {
-    const conversation = this.conversationsService.addMessage(conversationId, "agent", editedResponse);
-    const log = this.logs.find((item) => item.conversationId === conversationId && !item.finalResponse);
-    if (log) {
-      log.agentEditedResponse = editedResponse;
-      log.finalResponse = editedResponse;
-    }
+  async approveReply(conversationId: string, editedResponse: string) {
+    const conversation = await this.conversationsService.addMessage(conversationId, "agent", editedResponse);
+    const log = await this.approveLatestLog(conversationId, editedResponse);
     return { conversation, log };
+  }
+
+  private async createLog(log: AiLog) {
+    if (this.databaseService.isEnabled) {
+      const result = await this.databaseService.query<{
+        id: string;
+        conversation_id: string;
+        brand_id: string;
+        customer_message: string;
+        retrieved_context: KnowledgeBaseEntry[];
+        ai_generated_response: string;
+        agent_edited_response: string | null;
+        final_response: string | null;
+        confidence: AiSuggestion["confidence"];
+        guardrail: string;
+        created_at: string;
+      }>(
+        `
+          insert into ai_response_logs (
+            brand_id,
+            conversation_id,
+            customer_message,
+            retrieved_context,
+            ai_generated_response,
+            confidence,
+            guardrail
+          )
+          values ($1, $2, $3, $4::jsonb, $5, $6, $7)
+          returning
+            id,
+            conversation_id,
+            brand_id,
+            customer_message,
+            retrieved_context,
+            ai_generated_response,
+            agent_edited_response,
+            final_response,
+            confidence,
+            guardrail,
+            created_at::text
+        `,
+        [
+          log.brandId,
+          log.conversationId,
+          log.customerMessage,
+          JSON.stringify(log.retrievedContext),
+          log.aiGeneratedResponse,
+          log.confidence,
+          log.guardrail
+        ]
+      );
+      return this.mapDatabaseLog(result.rows[0]);
+    }
+
+    this.logs.unshift(log);
+    return log;
+  }
+
+  private async approveLatestLog(conversationId: string, editedResponse: string) {
+    if (this.databaseService.isEnabled) {
+      const result = await this.databaseService.query<{
+        id: string;
+        conversation_id: string;
+        brand_id: string;
+        customer_message: string;
+        retrieved_context: KnowledgeBaseEntry[];
+        ai_generated_response: string;
+        agent_edited_response: string | null;
+        final_response: string | null;
+        confidence: AiSuggestion["confidence"];
+        guardrail: string;
+        created_at: string;
+      }>(
+        `
+          update ai_response_logs
+          set agent_edited_response = $2,
+              final_response = $2
+          where id = (
+            select id
+            from ai_response_logs
+            where conversation_id = $1 and final_response is null
+            order by created_at desc
+            limit 1
+          )
+          returning
+            id,
+            conversation_id,
+            brand_id,
+            customer_message,
+            retrieved_context,
+            ai_generated_response,
+            agent_edited_response,
+            final_response,
+            confidence,
+            guardrail,
+            created_at::text
+        `,
+        [conversationId, editedResponse]
+      );
+      return result.rows[0] ? this.mapDatabaseLog(result.rows[0]) : null;
+    }
+
+    const log = this.logs.find((item) => item.conversationId === conversationId && !item.finalResponse);
+    if (!log) {
+      return null;
+    }
+    log.agentEditedResponse = editedResponse;
+    log.finalResponse = editedResponse;
+    return log;
+  }
+
+  private mapDatabaseLog(row: {
+    id: string;
+    conversation_id: string;
+    brand_id: string;
+    customer_message: string;
+    retrieved_context: KnowledgeBaseEntry[];
+    ai_generated_response: string;
+    agent_edited_response: string | null;
+    final_response: string | null;
+    confidence: AiSuggestion["confidence"];
+    guardrail: string;
+    created_at: string;
+  }): AiLog {
+    return {
+      id: row.id,
+      conversationId: row.conversation_id,
+      brandId: row.brand_id,
+      customerMessage: row.customer_message,
+      retrievedContext: row.retrieved_context,
+      aiGeneratedResponse: row.ai_generated_response,
+      agentEditedResponse: row.agent_edited_response,
+      finalResponse: row.final_response,
+      confidence: row.confidence,
+      guardrail: row.guardrail,
+      createdAt: row.created_at
+    };
   }
 
   private generateGuardedReply(

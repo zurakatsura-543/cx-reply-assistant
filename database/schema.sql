@@ -1,5 +1,15 @@
 create extension if not exists pgcrypto;
 
+create schema if not exists app;
+
+create or replace function app.current_user_id()
+returns uuid
+language sql
+stable
+as $$
+  select nullif(current_setting('app.current_user_id', true), '')::uuid
+$$;
+
 create type message_sender as enum ('customer', 'agent');
 create type policy_type as enum ('Return policy', 'Refund policy', 'Shipping policy', 'Cancellation policy');
 create type ai_confidence as enum ('High', 'Medium', 'Needs review');
@@ -108,14 +118,15 @@ alter table messages enable row level security;
 alter table knowledge_base_entries enable row level security;
 alter table ai_response_logs enable row level security;
 
--- Supabase RLS pattern. auth.uid() represents the logged-in agent.
+-- RLS pattern. The API can set app.current_user_id per request/transaction.
+-- In Supabase, this can be adapted to auth.uid().
 create policy brand_member_can_read_brands
 on brands for select
 using (
   exists (
     select 1 from brand_users
     where brand_users.brand_id = brands.id
-      and brand_users.user_id = auth.uid()
+      and brand_users.user_id = app.current_user_id()
   )
 );
 
@@ -125,7 +136,7 @@ using (
   exists (
     select 1 from brand_users
     where brand_users.brand_id = knowledge_base_entries.brand_id
-      and brand_users.user_id = auth.uid()
+      and brand_users.user_id = app.current_user_id()
   )
 );
 
@@ -135,7 +146,7 @@ using (
   exists (
     select 1 from brand_users
     where brand_users.brand_id = knowledge_base_entries.brand_id
-      and brand_users.user_id = auth.uid()
+      and brand_users.user_id = app.current_user_id()
       and brand_users.role in ('admin')
   )
 )
@@ -143,7 +154,7 @@ with check (
   exists (
     select 1 from brand_users
     where brand_users.brand_id = knowledge_base_entries.brand_id
-      and brand_users.user_id = auth.uid()
+      and brand_users.user_id = app.current_user_id()
       and brand_users.role in ('admin')
   )
 );
