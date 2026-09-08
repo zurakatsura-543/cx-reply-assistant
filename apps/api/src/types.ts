@@ -55,5 +55,8 @@ export type AiLog = {
   finalResponse: string | null;
   confidence: AiSuggestion["confidence"];
   guardrail: string;
+  modelName?: string | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
   createdAt: string;
 };

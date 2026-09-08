@@ -67,6 +67,28 @@ When `DATABASE_URL` exists, NestJS reads/writes PostgreSQL for:
 - AI response logs
 - Agent-approved final responses
 
+## AI Provider Setup
+
+The API calls an OpenAI-compatible chat completions endpoint from the NestJS backend only. The key is never used in the frontend.
+
+Create `.env` in the project root:
+
+```bash
+OPENAI_API_KEY="your_api_key_here"
+OPENAI_BASE_URL="https://api.openai.com/v1"
+OPENAI_MODEL="gpt-4o-mini"
+```
+
+For OpenRouter, use its OpenAI-compatible base URL and model name:
+
+```bash
+OPENAI_API_KEY="your_openrouter_key_here"
+OPENAI_BASE_URL="https://openrouter.ai/api/v1"
+OPENAI_MODEL="openai/gpt-4o-mini"
+```
+
+If `OPENAI_API_KEY` or `OPENAI_MODEL` is missing, the backend uses a deterministic fallback generator so the demo still works.
+
 ## Planned Production Additions
 
 - Supabase Auth and tenant-scoped row-level security

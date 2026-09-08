@@ -1,4 +1,5 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { DatabaseService } from "../../database/database.service";
 import { ConversationsService } from "../conversations/conversations.service";
 import { KnowledgeBaseService } from "../knowledge-base/knowledge-base.service";
@@ -6,12 +7,14 @@ import type { AiLog, AiSuggestion, Brand, Conversation, KnowledgeBaseEntry } fro
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
   private logs: AiLog[] = [];
 
   constructor(
     private readonly conversationsService: ConversationsService,
     private readonly knowledgeBaseService: KnowledgeBaseService,
-    private readonly databaseService: DatabaseService
+    private readonly databaseService: DatabaseService,
+    private readonly configService: ConfigService
   ) {}
 
   async generateReply(conversationId: string, _regenerate: boolean) {
@@ -24,7 +27,8 @@ export class AiService {
       brand.id,
       latestCustomerMessage?.text ?? ""
     );
-    const suggestion = this.generateGuardedReply(brand, conversation, retrievedContext);
+    const providerResult = await this.generateWithProvider(brand, conversation, retrievedContext);
+    const suggestion = providerResult.suggestion;
 
     const log: AiLog = {
       id: `log-${Date.now()}`,
@@ -37,6 +41,9 @@ export class AiService {
       finalResponse: null,
       confidence: suggestion.confidence,
       guardrail: suggestion.guardrail,
+      modelName: providerResult.modelName,
+      promptTokens: providerResult.promptTokens,
+      completionTokens: providerResult.completionTokens,
       createdAt: new Date().toISOString()
     };
 
@@ -68,6 +75,9 @@ export class AiService {
         final_response: string | null;
         confidence: AiSuggestion["confidence"];
         guardrail: string;
+        model_name: string | null;
+        prompt_tokens: number | null;
+        completion_tokens: number | null;
         created_at: string;
       }>(
         `
@@ -78,9 +88,12 @@ export class AiService {
             retrieved_context,
             ai_generated_response,
             confidence,
-            guardrail
+            guardrail,
+            model_name,
+            prompt_tokens,
+            completion_tokens
           )
-          values ($1, $2, $3, $4::jsonb, $5, $6, $7)
+          values ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10)
           returning
             id,
             conversation_id,
@@ -92,6 +105,9 @@ export class AiService {
             final_response,
             confidence,
             guardrail,
+            model_name,
+            prompt_tokens,
+            completion_tokens,
             created_at::text
         `,
         [
@@ -101,7 +117,10 @@ export class AiService {
           JSON.stringify(log.retrievedContext),
           log.aiGeneratedResponse,
           log.confidence,
-          log.guardrail
+          log.guardrail,
+          log.modelName,
+          log.promptTokens,
+          log.completionTokens
         ]
       );
       return this.mapDatabaseLog(result.rows[0]);
@@ -124,6 +143,9 @@ export class AiService {
         final_response: string | null;
         confidence: AiSuggestion["confidence"];
         guardrail: string;
+        model_name: string | null;
+        prompt_tokens: number | null;
+        completion_tokens: number | null;
         created_at: string;
       }>(
         `
@@ -148,6 +170,9 @@ export class AiService {
             final_response,
             confidence,
             guardrail,
+            model_name,
+            prompt_tokens,
+            completion_tokens,
             created_at::text
         `,
         [conversationId, editedResponse]
@@ -175,6 +200,9 @@ export class AiService {
     final_response: string | null;
     confidence: AiSuggestion["confidence"];
     guardrail: string;
+    model_name?: string | null;
+    prompt_tokens?: number | null;
+    completion_tokens?: number | null;
     created_at: string;
   }): AiLog {
     return {
@@ -188,8 +216,137 @@ export class AiService {
       finalResponse: row.final_response,
       confidence: row.confidence,
       guardrail: row.guardrail,
+      modelName: row.model_name ?? null,
+      promptTokens: row.prompt_tokens ?? null,
+      completionTokens: row.completion_tokens ?? null,
       createdAt: row.created_at
     };
+  }
+
+  private async generateWithProvider(
+    brand: Brand,
+    conversation: Conversation,
+    retrievedContext: KnowledgeBaseEntry[]
+  ): Promise<{
+    suggestion: AiSuggestion;
+    modelName: string | null;
+    promptTokens: number | null;
+    completionTokens: number | null;
+  }> {
+    const apiKey = this.configService.get<string>("OPENAI_API_KEY");
+    const model = this.configService.get<string>("OPENAI_MODEL");
+
+    if (!apiKey || !model) {
+      return {
+        suggestion: this.generateGuardedReply(brand, conversation, retrievedContext),
+        modelName: null,
+        promptTokens: null,
+        completionTokens: null
+      };
+    }
+
+    try {
+      const baseUrl = this.configService.get<string>("OPENAI_BASE_URL") || "https://api.openai.com/v1";
+      const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a CX reply assistant. Use only the provided brand knowledge. Never invent policy. Never promise refund, replacement, cancellation, or compensation unless the provided context supports it. If context is missing or the customer may be ineligible, mark confidence as Needs review and ask for verification. Return only valid JSON with keys: text, confidence, guardrail."
+            },
+            {
+              role: "user",
+              content: this.buildPrompt(brand, conversation, retrievedContext)
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`AI provider returned ${response.status}`);
+      }
+
+      const payload = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
+      const content = payload.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error("AI provider returned an empty response");
+      }
+
+      const parsed = JSON.parse(content) as Partial<AiSuggestion>;
+      if (!parsed.text || !parsed.confidence || !parsed.guardrail) {
+        throw new Error("AI provider returned incomplete JSON");
+      }
+
+      return {
+        suggestion: {
+          text: parsed.text,
+          confidence: this.normalizeConfidence(parsed.confidence),
+          guardrail: parsed.guardrail
+        },
+        modelName: model,
+        promptTokens: payload.usage?.prompt_tokens ?? null,
+        completionTokens: payload.usage?.completion_tokens ?? null
+      };
+    } catch (error) {
+      this.logger.warn(`AI provider failed; using fallback generator. ${(error as Error).message}`);
+      return {
+        suggestion: this.generateGuardedReply(brand, conversation, retrievedContext),
+        modelName: `${model} (fallback used)`,
+        promptTokens: null,
+        completionTokens: null
+      };
+    }
+  }
+
+  private buildPrompt(brand: Brand, conversation: Conversation, retrievedContext: KnowledgeBaseEntry[]) {
+    return JSON.stringify(
+      {
+        brand: {
+          id: brand.id,
+          name: brand.name,
+          tone: brand.tone
+        },
+        order: conversation.order,
+        conversationHistory: conversation.messages,
+        latestCustomerMessage:
+          [...conversation.messages].reverse().find((message) => message.sender === "customer")?.text ?? "",
+        retrievedKnowledge: retrievedContext.map((entry) => ({
+          type: entry.type,
+          title: entry.title,
+          body: entry.body,
+          score: entry.score
+        })),
+        requiredBehavior: [
+          "Write a concise empathetic customer-facing reply.",
+          "Ground the answer in retrievedKnowledge only.",
+          "Do not mention internal retrieval scores.",
+          "If retrievedKnowledge is empty, say the applicable policy needs verification.",
+          "If the policy window may be missed, do not promise approval."
+        ]
+      },
+      null,
+      2
+    );
+  }
+
+  private normalizeConfidence(confidence: string): AiSuggestion["confidence"] {
+    if (confidence === "High" || confidence === "Medium" || confidence === "Needs review") {
+      return confidence;
+    }
+
+    return "Needs review";
   }
 
   private generateGuardedReply(
