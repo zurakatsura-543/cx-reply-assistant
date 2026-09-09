@@ -173,12 +173,9 @@ Each log stores:
 - final approved response
 - confidence
 - guardrail
-- model name
-- prompt tokens
-- completion tokens
 - timestamp
 
-The UI shows the important audit fields for reviewers and agents. Model and token data is stored for cost/debugging analysis, but it is not shown in the main UI to keep the product experience clean.
+The UI shows the important audit fields for reviewers and agents. Internal AI provider metadata can also be retained by the backend for cost/debugging analysis without cluttering the product experience.
 
 ## Repository Structure
 
