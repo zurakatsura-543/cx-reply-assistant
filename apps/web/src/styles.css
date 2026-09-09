@@ -463,11 +463,36 @@ select {
 }
 
 .context-box,
+.reply-target,
 .suggestion {
   padding: 14px;
   border: 1px solid #d8e0dc;
   border-radius: 8px;
   background: #f8faf8;
+}
+
+.reply-target {
+  margin-bottom: 12px;
+  border-color: #bfd7ed;
+  background: #f3f8fc;
+}
+
+.reply-target span {
+  display: block;
+  margin-bottom: 6px;
+  color: #2454a6;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.reply-target p {
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.reply-target small {
+  color: #66747a;
 }
 
 .assistant-panel {

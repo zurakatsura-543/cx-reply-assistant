@@ -378,6 +378,14 @@ export function App() {
                 {isGenerating ? "Generating..." : suggestion ? "Regenerate Reply" : "Generate Reply"}
               </button>
 
+              {latestCustomerMessage && (
+                <div className="reply-target">
+                  <span>Replying to</span>
+                  <p>{latestCustomerMessage.text}</p>
+                  <small>{formatTimestamp(latestCustomerMessage.timestamp)}</small>
+                </div>
+              )}
+
               <div className="context-box">
                 <div className="panel-title">
                   <Database size={16} />
