@@ -1,105 +1,86 @@
-# CX Reply Assistant Architecture
+# Scaled Architecture Document
 
-## 1. Executive Summary
+## 1. Goal and System Overview
 
-The AI-Powered CX Reply Assistant is a full-stack agent-assist application for ecommerce support teams. The goal is to help agents answer refund, damaged item, shipping, and cancellation questions using the correct brand policy and the actual order context.
+The assessment implementation is a working MVP of an AI-powered CX reply assistant. If the product succeeds, the scaled system must support 500 brands, 5,000 CX agents, millions of messages, multiple communication channels, AI-generated responses, and brand-specific knowledge bases.
 
-The system is intentionally not an auto-send chatbot. AI drafts a response, but the agent reviews, edits, approves, and sends the final message. This keeps accountability with the human while still reducing repetitive writing work.
+At scale, I would design the system as a multi-tenant, event-driven platform. The core principle is that customer messages should be ingested reliably, processed idempotently, enriched with customer and order data, matched only with the correct brand knowledge, drafted by AI with guardrails, reviewed by a human agent, and then sent through the correct external channel.
 
-Live application:
+The main components are:
 
-- Frontend: `https://cx-reply-assistant-web.vercel.app`
-- Backend API: `https://cx-reply-assistant-api.onrender.com/api`
-- Repository: `https://github.com/zurakatsura-543/cx-reply-assistant`
+- React agent workspace for CX agents and brand admins
+- API gateway for authenticated frontend traffic
+- webhook gateway for external channel events
+- NestJS or similar backend services split by domain
+- PostgreSQL as the primary transactional database
+- Redis for sessions, rate limits, and hot conversation cache
+- object storage for attachments and large transcripts
+- vector database or pgvector for brand-filtered knowledge retrieval
+- message queue and workers for asynchronous processing
+- AI layer for retrieval, guardrails, prompt construction, model routing, and evaluation
+- observability layer for logs, metrics, traces, alerts, and audit records
 
-## 2. System Components
+## 2. Frontend, APIs, Database, Auth, and Integrations
 
-The frontend is a React and Vite application deployed on Vercel. It provides the agent workspace, customer simulation mode, conversation timeline, AI reply panel, retrieved context panel, brand knowledge base manager, and AI logs view.
+The frontend would remain a React web application, but the production version would be role-aware. CX agents would see assigned queues, conversations, order context, retrieved knowledge, AI drafts, approvals, and logs. Brand admins would manage brand policies, tone, permissions, and escalation rules. Internal Datastraw admins would manage tenants, integrations, billing, and operational health.
 
-The backend is a NestJS API deployed on Render. It owns all business logic, database access, retrieval, guardrails, AI provider calls, approvals, and audit logging. Keeping these responsibilities server-side prevents API keys and database credentials from being exposed to the browser.
+The backend should be structured by domain instead of one large service. I would use services or modules for conversations, knowledge base, AI generation, approvals, integrations, users/auth, and audit logging. These can start as a modular monolith and later split into independent services when traffic or team ownership requires it. The API gateway would enforce authentication, rate limits, request validation, and tenant context.
 
-Supabase PostgreSQL is the persistence layer. It stores brands, policies, conversations, messages, orders, and AI response logs. The database gives the app durable state, so conversations, KB updates, and logs survive refreshes and redeploys.
+PostgreSQL would be the source of truth for brands, users, memberships, conversations, messages, orders, policies, approvals, and AI logs. Every tenant-scoped table would include `brand_id` or `tenant_id`. High-volume tables such as messages and AI logs would be indexed by brand, conversation, and timestamp, and later partitioned by time or tenant if needed. Read replicas can serve analytics and log views so operational reporting does not slow down agent workflows.
 
-The AI provider is accessed through an OpenAI-compatible Chat Completions interface. The model is treated as a replaceable provider behind the backend. If the provider is unavailable or no key is configured, the backend has a deterministic fallback generator so the demo can still run.
+Authentication would use SSO/OAuth plus role-based access control. A user should not simply request a brand id from the frontend and receive data. The backend must derive allowed brand access from the authenticated user's membership. Database row-level security can add another layer of protection so even a backend bug is less likely to leak data across brands.
 
-## 3. Request Flow
+External integrations should be isolated behind an integration service. Ecommerce platforms, helpdesks, CRM systems, email, WhatsApp, chat, and social channels all have different APIs and failure modes. The integration service normalizes inbound events into a common message format and normalizes outbound sends into channel-specific delivery requests.
 
-When the frontend loads, it calls the backend for brands, conversations, and saved AI logs. The selected conversation determines the active customer, brand, order, and knowledge base.
+## 3. Multi-Brand Data Isolation
 
-When the agent clicks `Generate Reply`, the frontend sends the conversation id to the backend. The backend loads the latest customer message, the full message history, the order metadata, and the brand's policy notes. Retrieval then selects the most relevant policy entries for the customer request.
+Brand isolation must be enforced in multiple layers.
 
-Before the model is called, the backend computes deterministic facts such as the number of days since delivery. This is important because a customer can say "I received this 2 days ago", but the order record may show a different delivery date. The system should trust the structured order record over the customer's relative wording.
+First, authentication must attach a trusted tenant context to every request. The frontend can display the selected brand, but the backend should verify that the authenticated user belongs to that brand before reading or writing anything.
 
-The backend builds a constrained prompt containing:
+Second, all tenant data tables should include `brand_id` or `tenant_id`, and every query must filter by that value. Common queries should go through repository/helper methods that require tenant context, so engineers do not hand-write unsafe queries repeatedly.
 
-- customer name
-- brand name and brand tone
-- order id, item, value, status, and delivery date
-- latest customer message being replied to
-- conversation history
-- retrieved brand policy context
-- guardrail instructions
+Third, the knowledge retrieval system must enforce brand filters at retrieval time. Vector search must include metadata filters such as `brand_id`, `policy_status`, and optionally `effective_from` / `effective_to`. Without metadata filtering, a semantically similar policy from Brand B could be retrieved for Brand A.
 
-The AI response is returned to the frontend as a draft. The agent can edit it and then approve it. Approval writes the final agent message into the conversation and persists the audit trail.
+Fourth, background jobs and webhooks must carry tenant context in the job payload, and workers must re-validate it before processing. Idempotency keys should include channel, external message id, and brand id.
 
-## 4. Retrieval-Augmented Generation
+Finally, audit logs should record who accessed or changed sensitive data, which brand it belonged to, and what final message was sent. This makes accidental access detectable.
 
-RAG means Retrieval-Augmented Generation. In this project, the model does not answer from general knowledge alone. The backend retrieves brand-specific policy notes first, then provides those notes to the model as context.
+## 4. AI Reliability
 
-Brand scoping is the most important retrieval rule. Bloom Body Co. policies must never be mixed with Urban Nutri Labs policies. This prevents cross-brand policy leakage and protects the quality of the support response.
+The AI system should be reliable because it is surrounded by deterministic controls. The model should not be the source of truth for policy eligibility.
 
-The current retrieval implementation uses lightweight keyword scoring over policy type, title, and body. That is enough for this assessment because the policy set is small and controlled. In a production system, the next step would be embeddings with metadata filters for brand id, policy type, active status, and effective date.
+Knowledge retrieval should use a hybrid approach: keyword search for exact policy terms and vector search for semantic matches. Retrieval must be brand-filtered, ranked, and capped to a small top-k set. Each retrieved passage should include policy title, policy type, version, and effective date.
 
-## 5. Guardrails
+The prompt should include only the context needed to answer the current customer message: latest customer request, relevant conversation summary, order facts, retrieved policies, brand tone, and explicit rules about uncertainty. Structured order data should override customer-relative wording. For example, if a customer says "I received this 2 days ago" but the order says it was delivered on August 18, 2026, the assistant should use the order date.
 
-The highest-risk replies are refund, replacement, cancellation, and damaged product cases. The backend applies deterministic guardrails for these cases before and during generation.
+Guardrails should run before and after model generation. Pre-generation guardrails compute facts such as delivery age, refund window status, required documents, and risky topics. Post-generation guardrails check whether the draft promises a refund, invents policy, ignores required evidence, or contradicts the order record.
 
-Examples:
+Confidence should be based on retrieval quality, policy match strength, guardrail status, and model output validation. Low-confidence replies should be marked for review, fall back to a safe template, or ask the agent to escalate. The system should never silently auto-send a risky AI response.
 
-- If an order was delivered outside the allowed return window, the assistant should not promise a refund.
-- If damaged item reporting requires photos or batch details, the assistant should request those details.
-- If the customer's relative date conflicts with the structured delivery date, the response should mention the actual delivery date and use that as the source of truth.
-- If the case is uncertain, the response is marked as needing review.
+Evaluation should include offline test sets for the most common support scenarios, especially refunds, damaged items, cancellations, and conflicting dates. Production feedback should compare AI draft vs. agent-edited final reply. High edit distance or repeated overrides are signals that retrieval, policy data, or prompting needs improvement.
 
-This design reduces hallucination risk because critical eligibility logic does not depend only on the model.
+## 5. Scalability and What Breaks First
 
-## 6. Data Model
+Going from 20 brands to 500 brands, the first things likely to break are retrieval quality, message processing reliability, and database/query performance.
 
-The database is organized around brand-scoped support data:
+Retrieval breaks when too many policies are searched without strict tenant filtering, versioning, and ranking. I would move from simple keyword matching to a dedicated retrieval service using hybrid search, metadata filters, policy versioning, and evaluation tests.
 
-- `brands`: brand name and tone
-- `brand_policies`: policy type, title, and body
-- `conversations`: customer, brand, order, and status linkage
-- `conversation_messages`: customer and agent message history
-- `orders`: item, delivery date, value, status, and order id
-- `ai_response_logs`: AI draft, retrieved context, guardrail, confidence, final approved response, and timestamp
+Message processing breaks when multiple channels send duplicate or bursty webhook events. I would add a webhook gateway, durable queue, idempotent workers, retry policies, and dead-letter queues. The agent UI should read from the database state rather than directly depending on webhook timing.
 
-Knowledge base entries are editable in the UI, but duplicate protection is enforced around brand, policy type, and title. This prevents the RAG layer from retrieving conflicting records with the same policy identity.
+Database performance breaks when millions of messages and logs live in the same unpartitioned tables. I would add proper indexes, read replicas, time-based partitioning for logs/messages, archiving for old transcripts, and Redis caching for hot conversations.
 
-## 7. Reliability, Security, and Operations
+Team velocity can also break. A modular monolith is a good starting point, but domain boundaries should be clear enough to split services later without rewriting the product.
 
-The frontend never receives the AI provider key. It only talks to the NestJS API. The backend reads secrets from environment variables and calls the provider server-side.
+## 6. Reliability Scenarios
 
-The backend supports both PostgreSQL and an in-memory fallback. PostgreSQL is used for deployed demos and durable state. The fallback exists only to make local setup easier when a database is not configured.
+If a webhook is received twice, the webhook gateway should verify the signature, compute an idempotency key using brand id, channel, and external message id, and insert/process only once. Duplicate events should return success without creating duplicate messages.
 
-The deployed architecture separates hosting concerns:
+If an external API times out, the integration service should retry with exponential backoff. The conversation should show a pending or sync-delayed state, and the failed call should move to a dead-letter queue after repeated failures. Agents should not be blocked from viewing the existing conversation.
 
-- Vercel hosts the static frontend.
-- Render hosts the API service.
-- Supabase hosts PostgreSQL.
-- The AI provider is called only by the backend.
+If an AI request fails, the backend should return a safe fallback: either a deterministic template, a "needs manual review" state, or a retry option. The failure should be logged with enough metadata to debug provider, timeout, and prompt version issues.
 
-Operationally, the important debugging surfaces are API logs, AI response logs, database records, and frontend error banners. The app also keeps the UI clean by hiding low-level provider metadata from agents.
+If a message was processed but the response was not sent, the system should use a durable outbox pattern. The approved response is saved in the database as `pending_send`, and a worker sends it to the channel. Once the channel confirms delivery, the status changes to `sent`. If sending fails, the message remains retryable and visible to the agent instead of disappearing.
 
-## 8. Future Improvements
-
-The current system is assessment-ready. The next production improvements would be:
-
-- embeddings-based retrieval with brand metadata filters
-- policy versioning and effective dates
-- role-based access for agents, admins, and reviewers
-- per-brand AI budget controls
-- structured tracing for each AI generation
-- evaluation tests for refund and date-sensitive edge cases
-- multi-tenant auth and stricter row-level security enforcement
+This architecture keeps the system safe, scalable, and auditable while preserving the main product principle: AI assists the agent, but policy, tenant isolation, and final accountability stay under deterministic system control.
 

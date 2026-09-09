@@ -1,55 +1,105 @@
-# CX Reply Assistant Architecture Diagram
+# Scaled CX Reply Assistant Architecture Diagram
+
+Use this Mermaid code for the Part 2 system design diagram.
 
 ```mermaid
-flowchart LR
-  Agent["CX Agent / Browser"] --> Web["React + Vite Frontend<br/>Vercel"]
-  Customer["Customer Test Mode"] --> Web
+flowchart TB
+  subgraph Users["Users and Channels"]
+    Agent["CX Agents<br/>5,000 users"]
+    Admin["Brand Admins"]
+    Channels["Customer Channels<br/>Email, WhatsApp, Chat, Social"]
+  end
 
-  Web -->|"HTTP JSON API<br/>VITE_API_URL"| Api["NestJS API<br/>Render"]
+  subgraph Edge["Edge and Access Layer"]
+    CDN["CDN / WAF"]
+    Auth["Auth Service<br/>SSO, RBAC, brand membership"]
+    Webhook["Webhook Gateway<br/>signature verification"]
+    API["API Gateway<br/>rate limits, request validation"]
+  end
 
-  Api --> Conv["Conversation Module"]
-  Api --> KB["Knowledge Base Module"]
-  Api --> AI["AI Module"]
+  subgraph App["Application Layer"]
+    Frontend["Agent Workspace<br/>React web app"]
+    ConversationAPI["Conversation API"]
+    KnowledgeAPI["Knowledge Base API"]
+    ApprovalAPI["Approval and Send API"]
+    IntegrationAPI["Integration Service<br/>orders, CRM, helpdesk"]
+  end
 
-  Conv --> DB[("Supabase PostgreSQL")]
-  KB --> DB
-  AI --> DB
+  subgraph Async["Background Processing"]
+    Queue["Message Queue<br/>SQS/RabbitMQ/Kafka"]
+    Workers["Workers<br/>idempotent processors"]
+    RetryDLQ["Retry Queue + DLQ"]
+    Scheduler["Scheduled Jobs<br/>sync, cleanup, evaluation"]
+  end
 
-  AI --> Retrieval["Brand-Scoped Retrieval<br/>policy matching"]
-  Retrieval --> DB
-  Retrieval --> Prompt["Prompt Builder<br/>customer + order + history + policies"]
-  Prompt --> Guardrails["Deterministic Guardrails<br/>dates, refund windows, risky claims"]
-  Guardrails --> LLM["OpenAI-Compatible<br/>Chat Completions API"]
-  LLM --> Review["Agent Review UI<br/>edit + approve"]
-  Review --> Logs[("ai_response_logs")]
-  Review --> Messages[("conversation_messages")]
+  subgraph Data["Data Layer"]
+    PrimaryDB[("Primary PostgreSQL<br/>tenant scoped tables")]
+    ReadReplica[("Read Replicas")]
+    Cache[("Redis Cache<br/>sessions, hot conversations")]
+    ObjectStore[("Object Storage<br/>attachments, transcripts")]
+    VectorDB[("Vector Index<br/>brand-filtered embeddings")]
+    AuditDB[("Audit Logs<br/>AI decisions and sends")]
+  end
 
-  Logs --> DB
-  Messages --> DB
-```
+  subgraph AI["AI Layer"]
+    Retrieval["Retrieval Service<br/>brand_id metadata filter"]
+    PolicyRanker["Policy Ranker<br/>top-k relevant context"]
+    Guardrails["Guardrails<br/>policy windows, PII, confidence"]
+    PromptBuilder["Prompt Builder<br/>order + customer + KB + history"]
+    ModelRouter["Model Router<br/>cost, quality, fallback"]
+    LLM["LLM Provider(s)<br/>OpenAI-compatible APIs"]
+    Eval["Evaluation Pipeline<br/>offline tests + reviewer feedback"]
+  end
 
-## Data Flow
+  subgraph External["External Systems"]
+    Ecommerce["Ecommerce / OMS"]
+    Helpdesk["Helpdesk / CRM"]
+    Notification["Email / WhatsApp / Chat APIs"]
+    Monitoring["Observability<br/>logs, traces, metrics, alerts"]
+  end
 
-```mermaid
-sequenceDiagram
-  participant U as Agent
-  participant W as React Frontend
-  participant A as NestJS API
-  participant D as PostgreSQL
-  participant M as AI Provider
+  Agent --> CDN --> Frontend
+  Admin --> CDN
+  Frontend --> Auth
+  Frontend --> API
 
-  U->>W: Select conversation and click Generate Reply
-  W->>A: POST /conversations/:id/generate-reply
-  A->>D: Load conversation, messages, order, brand
-  A->>D: Retrieve matching brand knowledge
-  A->>A: Compute delivery-age facts and guardrails
-  A->>M: Send constrained prompt with retrieved context
-  M-->>A: Return suggested reply
-  A->>D: Persist AI response log
-  A-->>W: Return suggestion, guardrail, retrieved context
-  U->>W: Edit and approve final reply
-  W->>A: POST /conversations/:id/approve
-  A->>D: Insert final agent message and update log
-  A-->>W: Return updated conversation
+  Channels --> Webhook --> Queue
+  API --> ConversationAPI
+  API --> KnowledgeAPI
+  API --> ApprovalAPI
+
+  Queue --> Workers
+  Workers --> ConversationAPI
+  Workers --> IntegrationAPI
+  Workers --> RetryDLQ
+  Scheduler --> Workers
+
+  ConversationAPI --> PrimaryDB
+  ConversationAPI --> Cache
+  ConversationAPI --> ObjectStore
+  KnowledgeAPI --> PrimaryDB
+  KnowledgeAPI --> VectorDB
+  ApprovalAPI --> PrimaryDB
+  ApprovalAPI --> AuditDB
+
+  IntegrationAPI --> Ecommerce
+  IntegrationAPI --> Helpdesk
+  ApprovalAPI --> Notification
+
+  ConversationAPI --> Retrieval
+  Retrieval --> VectorDB
+  Retrieval --> PolicyRanker
+  PolicyRanker --> Guardrails
+  Guardrails --> PromptBuilder
+  PromptBuilder --> ModelRouter
+  ModelRouter --> LLM
+  ModelRouter --> AuditDB
+  Eval --> VectorDB
+  Eval --> AuditDB
+
+  PrimaryDB --> ReadReplica
+  App --> Monitoring
+  Async --> Monitoring
+  AI --> Monitoring
 ```
 
