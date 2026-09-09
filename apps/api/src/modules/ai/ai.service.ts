@@ -316,10 +316,10 @@ export class AiService {
           temperature: 0.2,
           response_format: { type: "json_object" },
           messages: [
-            {
-              role: "system",
-              content:
-                "You are a CX reply assistant. Use only the provided brand knowledge and derived date facts. Never invent policy. Never promise refund, replacement, cancellation, or compensation unless the provided context and derived dates support it. Do not say the customer is within a policy window unless the derived facts prove it. If context is missing or the customer may be ineligible, mark confidence as Needs review and ask for verification. Return only valid JSON with keys: text, confidence, guardrail."
+	            {
+	              role: "system",
+	              content:
+	                "You are a CX reply assistant. Use only the provided brand knowledge, order details, and derived date facts. Treat order.deliveredAt and derivedFacts.daysSinceDelivery as more reliable than customer-stated relative dates such as today, yesterday, or 2 days ago. When policy eligibility depends on delivery date, explicitly mention the order delivery date. Never invent policy. Never promise refund, replacement, cancellation, or compensation unless the provided context and derived dates support it. Do not say the customer is within a policy window unless the derived facts prove it. If context is missing or the customer may be ineligible, mark confidence as Needs review and ask for verification. Return only valid JSON with keys: text, confidence, guardrail."
             },
             {
               role: "user",
@@ -380,10 +380,11 @@ export class AiService {
         conversationHistory: conversation.messages,
         latestCustomerMessage:
           [...conversation.messages].reverse().find((message) => message.sender === "customer")?.text ?? "",
-        derivedFacts: {
-          currentDate: new Date().toISOString().slice(0, 10),
-          daysSinceDelivery: this.getDaysSinceDelivery(conversation)
-        },
+	        derivedFacts: {
+	          currentDate: new Date().toISOString().slice(0, 10),
+	          deliveredAt: conversation.order.deliveredAt,
+	          daysSinceDelivery: this.getDaysSinceDelivery(conversation)
+	        },
         retrievedKnowledge: retrievedContext.map((entry) => ({
           type: entry.type,
           title: entry.title,
@@ -394,10 +395,11 @@ export class AiService {
           "Write a concise empathetic customer-facing reply.",
           "Ground the answer in retrievedKnowledge only.",
           "Do not mention internal retrieval scores.",
-          "If retrievedKnowledge is empty, say the applicable policy needs verification.",
-          "If the policy window may be missed, do not promise approval.",
-          "If daysSinceDelivery is greater than a policy window, state that the case needs agent review."
-        ]
+	          "If retrievedKnowledge is empty, say the applicable policy needs verification.",
+	          "If the policy window may be missed, do not promise approval.",
+	          "If daysSinceDelivery is greater than a policy window, state that the case needs agent review.",
+	          "If the customer's relative date conflicts with order.deliveredAt, rely on order.deliveredAt and mention that delivery date."
+	        ]
       },
       null,
       2
@@ -419,44 +421,45 @@ export class AiService {
   ): AiSuggestion | null {
     const latest = [...conversation.messages].reverse().find((message) => message.sender === "customer")?.text ?? "";
     const lower = latest.toLowerCase();
-    const contextText = retrievedContext.map((entry) => entry.body).join(" ").toLowerCase();
-    const daysSinceDelivery = this.getDaysSinceDelivery(conversation);
-    const isDamageOrLeakage = /broken|damaged|leak|leaking|crack|bottle/.test(lower);
+	    const contextText = retrievedContext.map((entry) => entry.body).join(" ").toLowerCase();
+	    const daysSinceDelivery = this.getDaysSinceDelivery(conversation);
+	    const deliveredAt = this.formatOrderDate(conversation.order.deliveredAt);
+	    const isDamageOrLeakage = /broken|damaged|leak|leaking|crack|bottle/.test(lower);
 
     if (isDamageOrLeakage && daysSinceDelivery !== null && /48 hours/.test(contextText) && daysSinceDelivery > 2) {
       return {
         confidence: "Needs review",
-        guardrail:
-          `The order was delivered ${daysSinceDelivery} days ago, which appears outside the 48-hour damage/leakage reporting window.`,
-        text:
-          `I am sorry to hear there is an issue with your ${conversation.order.item}. Please share the photos and batch/order details so our team can review the case. Based on ${brand.name}'s policy, damage or leakage claims normally need to be verified within 48 hours of delivery, so I cannot confirm a refund or replacement until support reviews whether any exception applies.`
-      };
-    }
+	        guardrail:
+	          `The order was delivered on ${deliveredAt}, ${daysSinceDelivery} days ago, which appears outside the 48-hour damage/leakage reporting window.`,
+	        text:
+	          `I am sorry to hear there is an issue with your ${conversation.order.item}. I checked the order details, and this order was delivered on ${deliveredAt}, which is ${daysSinceDelivery} days ago. Based on ${brand.name}'s policy, damage or leakage claims normally need to be verified within 48 hours of delivery, so I cannot confirm a refund or replacement until support reviews whether any exception applies. Please share the photos and batch/order details so our team can review the case.`
+	      };
+	    }
 
     if (daysSinceDelivery !== null && /15 days/.test(contextText) && daysSinceDelivery > 15 && /refund|return/.test(lower)) {
       return {
         confidence: "Needs review",
-        guardrail:
-          `The order was delivered ${daysSinceDelivery} days ago, which appears outside the 15-day return window.`,
-        text:
-          `Thank you for reaching out. Based on ${brand.name}'s policy, this appears to be outside the standard 15-day return window. I cannot confirm a refund immediately, but I can help share the details with support for review if you provide the order details and any relevant photos.`
-      };
-    }
+	        guardrail:
+	          `The order was delivered on ${deliveredAt}, ${daysSinceDelivery} days ago, which appears outside the 15-day return window.`,
+	        text:
+	          `Thank you for reaching out. I checked the order details, and this order was delivered on ${deliveredAt}, which is ${daysSinceDelivery} days ago. Based on ${brand.name}'s policy, this appears to be outside the standard 15-day return window, so I cannot confirm a refund immediately. I can still help share the details with support for review if you provide any relevant photos or additional order details.`
+	      };
+	    }
 
     if (daysSinceDelivery !== null && /7 days/.test(contextText) && daysSinceDelivery > 7 && /refund|return|broken|damaged/.test(lower)) {
       return {
         confidence: "Needs review",
-        guardrail:
-          `The order was delivered ${daysSinceDelivery} days ago, which appears outside the 7-day refund/damage reporting window.`,
-        text:
-          `I am sorry about the trouble. Based on ${brand.name}'s policy, this may be outside the standard reporting window, so I cannot promise a refund or replacement right away. Please share the photos and order details, and our support team can review the case.`
-      };
-    }
+	        guardrail:
+	          `The order was delivered on ${deliveredAt}, ${daysSinceDelivery} days ago, which appears outside the 7-day refund/damage reporting window.`,
+	        text:
+	          `I am sorry about the trouble. I checked the order details, and this order was delivered on ${deliveredAt}, which is ${daysSinceDelivery} days ago. Based on ${brand.name}'s policy, this may be outside the standard reporting window, so I cannot promise a refund or replacement right away. Please share the photos and order details, and our support team can review the case.`
+	      };
+	    }
 
     return null;
   }
 
-  private getDaysSinceDelivery(conversation: Conversation) {
+	  private getDaysSinceDelivery(conversation: Conversation) {
     const deliveredAt = new Date(conversation.order.deliveredAt);
     if (Number.isNaN(deliveredAt.getTime())) {
       return null;
@@ -464,8 +467,21 @@ export class AiService {
 
     const today = new Date();
     const millisecondsPerDay = 24 * 60 * 60 * 1000;
-    return Math.max(0, Math.floor((today.getTime() - deliveredAt.getTime()) / millisecondsPerDay));
-  }
+	    return Math.max(0, Math.floor((today.getTime() - deliveredAt.getTime()) / millisecondsPerDay));
+	  }
+
+	  private formatOrderDate(value: string) {
+	    const date = new Date(value);
+	    if (Number.isNaN(date.getTime())) {
+	      return value;
+	    }
+
+	    return date.toLocaleDateString("en-US", {
+	      month: "long",
+	      day: "numeric",
+	      year: "numeric"
+	    });
+	  }
 
   private generateGuardedReply(
     brand: Brand,
