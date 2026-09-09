@@ -9,6 +9,8 @@ This project is a full-stack customer experience reply assistant for ecommerce s
 - Frontend: `https://cx-reply-assistant-web.vercel.app`
 - Backend API: `https://cx-reply-assistant-api.onrender.com/api`
 - GitHub Repository: `https://github.com/zurakatsura-543/cx-reply-assistant`
+- Architecture Document: `https://example.com/cx-reply-assistant-architecture`
+- Demo Video: `https://example.com/cx-reply-assistant-demo`
 
 ## Product Goal
 
@@ -99,6 +101,10 @@ Agent Review UI
 Messages + AI Response Logs
 ```
 
+For the fuller architecture write-up, see [docs/architecture.md](docs/architecture.md).
+
+For the Mermaid architecture diagram, see [docs/architecture-diagram.md](docs/architecture-diagram.md).
+
 ## How RAG Works
 
 RAG means Retrieval-Augmented Generation.
@@ -118,7 +124,7 @@ In this project:
    - retrieved brand policy context
 5. The model returns a suggested response.
 6. The agent can edit and approve the final message.
-7. The system stores the customer message, retrieved context, AI response, final response, confidence, guardrail, model, token usage, and timestamp.
+7. The system stores the customer message, retrieved context, AI response, final response, confidence, guardrail, and timestamp.
 
 Brand scoping is important. Bloom Body Co. policies are never mixed with Urban Nutri Labs policies.
 
@@ -383,11 +389,17 @@ Runs linting for both workspaces.
 
 ## Cost and Reliability Notes
 
-- The backend stores prompt and completion token counts for AI cost analysis.
-- The visible UI hides token/model details to keep the user experience clean.
+- The backend can retain provider usage metadata for cost and debugging analysis.
+- The visible UI hides provider details to keep the user experience clean.
 - The app has deterministic fallback generation so demos do not fail when an AI provider is unavailable.
 - Guardrails run before model generation for sensitive policy cases.
 - AI responses require human approval before being sent.
+
+For the written cost/debugging scenario answer, see [docs/ai-cost-debugging.md](docs/ai-cost-debugging.md).
+
+For leadership and ownership answers, see [docs/leadership-ownership.md](docs/leadership-ownership.md).
+
+For the demo plan and final submission checklist, see [docs/demo-video-script.md](docs/demo-video-script.md) and [docs/final-submission-checklist.md](docs/final-submission-checklist.md).
 
 ## Assessment Alignment
 
