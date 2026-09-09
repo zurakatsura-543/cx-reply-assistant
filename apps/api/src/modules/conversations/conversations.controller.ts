@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Post } from "@nestjs/common";
 import { ConversationsService } from "./conversations.service";
 import type { MessageSender } from "../../types";
 
@@ -17,5 +17,10 @@ export class ConversationsController {
     @Body() body: { sender: MessageSender; text: string }
   ) {
     return this.conversationsService.addMessage(conversationId, body.sender, body.text);
+  }
+
+  @Delete(":conversationId/messages/:messageId")
+  deleteMessage(@Param("conversationId") conversationId: string, @Param("messageId") messageId: string) {
+    return this.conversationsService.deleteMessage(conversationId, messageId);
   }
 }

@@ -50,6 +50,12 @@ export function sendMessage(conversationId: string, sender: MessageSender, text:
   });
 }
 
+export function deleteMessage(conversationId: string, messageId: string) {
+  return request<Conversation>(`/conversations/${conversationId}/messages/${messageId}`, {
+    method: "DELETE"
+  });
+}
+
 export function createKnowledgeEntry(
   brandId: string,
   entry: { type: PolicyType; title: string; body: string }

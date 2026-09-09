@@ -321,11 +321,45 @@ h3 {
   box-shadow: 0 6px 16px rgba(20, 34, 38, 0.06);
 }
 
-.message span {
-  display: block;
-  margin-bottom: 4px;
+.message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 12px;
   font-weight: 800;
+}
+
+.message-header button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: #718087;
+  background: transparent;
+  opacity: 0;
+  transition: opacity 160ms ease, background 160ms ease;
+}
+
+.message:hover .message-header button,
+.message-delete-confirm .secondary-action,
+.message-delete-confirm .danger-action {
+  opacity: 1;
+}
+
+.message-header button:hover {
+  color: #9b271f;
+  background: rgba(155, 39, 31, 0.1);
+}
+
+.message.agent .message-header button {
+  color: #d7ece6;
+}
+
+.message.agent .message-header button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .message p {
@@ -345,6 +379,27 @@ h3 {
 
 .message.agent small {
   color: #d7ece6;
+}
+
+.message-delete-confirm {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.message-delete-confirm p {
+  margin-bottom: 0;
+  color: #85231d;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.message-delete-confirm div {
+  display: flex;
+  gap: 8px;
 }
 
 .composer {

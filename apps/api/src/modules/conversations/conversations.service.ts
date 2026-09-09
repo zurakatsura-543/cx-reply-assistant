@@ -61,6 +61,29 @@ export class ConversationsService {
     return conversation;
   }
 
+  async deleteMessage(conversationId: string, messageId: string) {
+    const conversation = await this.getConversation(conversationId);
+    const message = conversation.messages.find((item) => item.id === messageId);
+
+    if (!message) {
+      throw new NotFoundException("Message not found");
+    }
+
+    if (this.databaseService.isEnabled) {
+      await this.databaseService.query(
+        `
+          delete from messages
+          where conversation_id = $1 and id = $2
+        `,
+        [conversationId, messageId]
+      );
+      return this.getConversation(conversationId);
+    }
+
+    conversation.messages = conversation.messages.filter((item) => item.id !== messageId);
+    return conversation;
+  }
+
   private async listConversationsFromDatabase(conversationId?: string): Promise<Conversation[]> {
     const result = await this.databaseService.query<{
       conversation_id: string;

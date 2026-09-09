@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   approveAiReply,
   createKnowledgeEntry,
+  deleteMessage,
   deleteKnowledgeEntry,
   generateAiReply,
   getAiLogs,
@@ -72,6 +73,7 @@ export function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [sendStatus, setSendStatus] = useState<"idle" | "sending" | "sent">("idle");
+  const [pendingDeleteMessageId, setPendingDeleteMessageId] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const [editingKbEntryId, setEditingKbEntryId] = useState<string | null>(null);
   const [editingKbDraft, setEditingKbDraft] = useState<{ title: string; body: string }>({
@@ -152,6 +154,22 @@ export function App() {
     } catch (error) {
       setSendStatus("idle");
       setApiError("Could not send message through the API.");
+    }
+  }
+
+  async function removeMessage(messageId: string) {
+    try {
+      const updatedConversation = await deleteMessage(conversation.id, messageId);
+      setConversations((current) =>
+        current.map((item) => (item.id === conversation.id ? updatedConversation : item))
+      );
+      setPendingDeleteMessageId(null);
+      setSuggestionsByConversation((current) => ({ ...current, [conversation.id]: null }));
+      setEditedRepliesByConversation((current) => ({ ...current, [conversation.id]: "" }));
+      setContextByConversation((current) => ({ ...current, [conversation.id]: [] }));
+      setApiError(null);
+    } catch (error) {
+      setApiError("Could not delete the message through the API.");
     }
   }
 
@@ -436,13 +454,38 @@ export function App() {
           </div>
 
           <div className="messages">
-            {conversation.messages.map((message) => (
-              <div className={`message ${message.sender}`} key={message.id}>
-                <span>{message.sender === "agent" ? "Agent" : conversation.customerName}</span>
-                <p>{message.text}</p>
-                <small>{formatTimestamp(message.timestamp)}</small>
-              </div>
-            ))}
+            {conversation.messages.map((message) => {
+              const isConfirmingDelete = pendingDeleteMessageId === message.id;
+
+              return (
+                <div className={`message ${message.sender}`} key={message.id}>
+                  <div className="message-header">
+                    <span>{message.sender === "agent" ? "Agent" : conversation.customerName}</span>
+                    <button
+                      aria-label="Delete message"
+                      onClick={() => setPendingDeleteMessageId(message.id)}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                  <p>{message.text}</p>
+                  <small>{formatTimestamp(message.timestamp)}</small>
+                  {isConfirmingDelete && (
+                    <div className="message-delete-confirm">
+                      <p>Delete this message?</p>
+                      <div>
+                        <button className="danger-action" onClick={() => removeMessage(message.id)}>
+                          Delete
+                        </button>
+                        <button className="secondary-action" onClick={() => setPendingDeleteMessageId(null)}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <div className="composer">
