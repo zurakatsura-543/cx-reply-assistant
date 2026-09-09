@@ -391,6 +391,10 @@ select {
   background: #0d6b5f;
 }
 
+.composer button.sent {
+  background: #23824f;
+}
+
 .panel-title {
   display: flex;
   align-items: center;

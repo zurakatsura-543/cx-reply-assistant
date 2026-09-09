@@ -71,6 +71,7 @@ export function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
+  const [sendStatus, setSendStatus] = useState<"idle" | "sending" | "sent">("idle");
   const [apiError, setApiError] = useState<string | null>(null);
   const [editingKbEntryId, setEditingKbEntryId] = useState<string | null>(null);
   const [editingKbDraft, setEditingKbDraft] = useState<{ title: string; body: string }>({
@@ -135,6 +136,7 @@ export function App() {
 
   async function addMessage(sender: MessageSender, text: string) {
     if (!text.trim()) return;
+    setSendStatus("sending");
     try {
       const updatedConversation = await sendMessage(conversation.id, sender, text);
       setConversations((current) =>
@@ -144,8 +146,11 @@ export function App() {
       setSuggestionsByConversation((current) => ({ ...current, [conversation.id]: null }));
       setEditedRepliesByConversation((current) => ({ ...current, [conversation.id]: "" }));
       setContextByConversation((current) => ({ ...current, [conversation.id]: [] }));
+      setSendStatus("sent");
+      window.setTimeout(() => setSendStatus("idle"), 1200);
       setApiError(null);
     } catch (error) {
+      setSendStatus("idle");
       setApiError("Could not send message through the API.");
     }
   }
@@ -446,9 +451,13 @@ export function App() {
               onChange={(event) => setDraft(event.target.value)}
               placeholder={mode === "customer" ? "Send a new customer message..." : "Write a manual agent reply..."}
             />
-            <button onClick={() => addMessage(mode, draft)}>
+            <button
+              className={sendStatus === "sent" ? "sent" : ""}
+              onClick={() => addMessage(mode, draft)}
+              disabled={sendStatus === "sending"}
+            >
               <Send size={16} />
-              Send
+              {sendStatus === "sending" ? "Sending..." : sendStatus === "sent" ? "Sent" : "Send"}
             </button>
           </div>
         </section>

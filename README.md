@@ -6,11 +6,9 @@ This project is a full-stack customer experience reply assistant for ecommerce s
 
 ## Live Links
 
-- Frontend: `https://your-vercel-app-url.vercel.app`
-- Backend API: `https://your-render-api-url.onrender.com/api`
-- GitHub Repository: `https://github.com/your-username/cx-reply-assistant`
-
-These are placeholders and should be replaced after deployment.
+- Frontend: `https://cx-reply-assistant-web.vercel.app`
+- Backend API: `https://cx-reply-assistant-api.onrender.com/api`
+- GitHub Repository: `https://github.com/zurakatsura-543/cx-reply-assistant`
 
 ## Product Goal
 
