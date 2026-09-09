@@ -46,11 +46,18 @@ export type AiSuggestion = {
 
 export type AiLog = {
   id: string;
+  conversationId: string;
+  brandId: string;
   customerMessage: string;
   brand: string;
   context: KnowledgeBaseEntry[];
   aiResponse: string;
   editedResponse: string;
   finalResponse: string;
+  confidence: AiSuggestion["confidence"];
+  guardrail: string;
+  modelName: string | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
   timestamp: string;
 };

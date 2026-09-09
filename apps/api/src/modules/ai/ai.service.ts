@@ -62,6 +62,54 @@ export class AiService {
     return { conversation, log };
   }
 
+  async listLogs(conversationId: string) {
+    if (this.databaseService.isEnabled) {
+      const result = await this.databaseService.query<{
+        id: string;
+        conversation_id: string;
+        brand_id: string;
+        customer_message: string;
+        retrieved_context: KnowledgeBaseEntry[];
+        ai_generated_response: string;
+        agent_edited_response: string | null;
+        final_response: string | null;
+        confidence: AiSuggestion["confidence"];
+        guardrail: string;
+        model_name: string | null;
+        prompt_tokens: number | null;
+        completion_tokens: number | null;
+        created_at: string;
+      }>(
+        `
+          select
+            id,
+            conversation_id,
+            brand_id,
+            customer_message,
+            retrieved_context,
+            ai_generated_response,
+            agent_edited_response,
+            final_response,
+            confidence,
+            guardrail,
+            model_name,
+            prompt_tokens,
+            completion_tokens,
+            created_at::text
+          from ai_response_logs
+          where conversation_id = $1
+          order by created_at desc
+          limit 50
+        `,
+        [conversationId]
+      );
+
+      return result.rows.map((row) => this.mapDatabaseLog(row));
+    }
+
+    return this.logs.filter((log) => log.conversationId === conversationId);
+  }
+
   private async createLog(log: AiLog) {
     if (this.databaseService.isEnabled) {
       const result = await this.databaseService.query<{

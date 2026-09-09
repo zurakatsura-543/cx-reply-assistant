@@ -1,4 +1,4 @@
-import type { Brand, Conversation, KnowledgeBaseEntry, MessageSender, PolicyType } from "./types";
+import type { AiSuggestion, Brand, Conversation, KnowledgeBaseEntry, MessageSender, PolicyType } from "./types";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
 
@@ -17,6 +17,23 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   return response.json() as Promise<T>;
 }
+
+export type ApiAiLog = {
+  id: string;
+  conversationId: string;
+  brandId: string;
+  customerMessage: string;
+  retrievedContext: KnowledgeBaseEntry[];
+  aiGeneratedResponse: string;
+  agentEditedResponse: string | null;
+  finalResponse: string | null;
+  confidence: AiSuggestion["confidence"];
+  guardrail: string;
+  modelName: string | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  createdAt: string;
+};
 
 export function getBrands() {
   return request<Brand[]>("/brands");
@@ -68,13 +85,7 @@ export function generateAiReply(conversationId: string, regenerate: boolean) {
       text: string;
     };
     retrievedContext: KnowledgeBaseEntry[];
-    log: {
-      id: string;
-      customerMessage: string;
-      aiGeneratedResponse: string;
-      finalResponse: string | null;
-      createdAt: string;
-    };
+    log: ApiAiLog;
   }>(`/conversations/${conversationId}/ai/generate-reply`, {
     method: "POST",
     body: JSON.stringify({ regenerate })
@@ -84,15 +95,13 @@ export function generateAiReply(conversationId: string, regenerate: boolean) {
 export function approveAiReply(conversationId: string, editedResponse: string) {
   return request<{
     conversation: Conversation;
-    log: {
-      id: string;
-      customerMessage: string;
-      aiGeneratedResponse: string;
-      finalResponse: string | null;
-      createdAt: string;
-    } | null;
+    log: ApiAiLog | null;
   }>(`/conversations/${conversationId}/ai/approve`, {
     method: "POST",
     body: JSON.stringify({ editedResponse })
   });
+}
+
+export function getAiLogs(conversationId: string) {
+  return request<ApiAiLog[]>(`/conversations/${conversationId}/ai/logs`);
 }

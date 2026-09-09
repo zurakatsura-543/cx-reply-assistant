@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { DatabaseService } from "../../database/database.service";
 import { initialBrands } from "../../seed-data";
 import type { Brand, KnowledgeBaseEntry } from "../../types";
@@ -60,6 +60,8 @@ export class KnowledgeBaseService {
   }
 
   async createEntry(brandId: string, entry: Omit<KnowledgeBaseEntry, "id">) {
+    await this.ensureUniqueEntry(brandId, entry.type, entry.title);
+
     if (this.databaseService.isEnabled) {
       const result = await this.databaseService.query<{
         id: string;
@@ -87,6 +89,7 @@ export class KnowledgeBaseService {
     if (this.databaseService.isEnabled) {
       const current = await this.getEntry(brandId, entryId);
       const next = { ...current, ...updates, id: current.id };
+      await this.ensureUniqueEntry(brandId, next.type, next.title, entryId);
       const result = await this.databaseService.query<{
         id: string;
         type: KnowledgeBaseEntry["type"];
@@ -112,7 +115,9 @@ export class KnowledgeBaseService {
     if (!entry) {
       throw new NotFoundException("Knowledge base entry not found");
     }
-    Object.assign(entry, updates, { id: entry.id });
+    const next = { ...entry, ...updates, id: entry.id };
+    await this.ensureUniqueEntry(brandId, next.type, next.title, entryId);
+    Object.assign(entry, next);
     return entry;
   }
 
@@ -152,6 +157,48 @@ export class KnowledgeBaseService {
       throw new NotFoundException("Knowledge base entry not found");
     }
     return result.rows[0];
+  }
+
+  private async ensureUniqueEntry(
+    brandId: string,
+    type: KnowledgeBaseEntry["type"],
+    title: string,
+    excludeEntryId?: string
+  ) {
+    const normalizedTitle = title.trim().toLowerCase();
+
+    if (this.databaseService.isEnabled) {
+      const result = await this.databaseService.query<{ id: string }>(
+        `
+          select id
+          from knowledge_base_entries
+          where brand_id = $1
+            and type = $2
+            and lower(trim(title)) = $3
+            and is_active = true
+            and ($4::uuid is null or id <> $4::uuid)
+          limit 1
+        `,
+        [brandId, type, normalizedTitle, excludeEntryId ?? null]
+      );
+
+      if (result.rows[0]) {
+        throw new ConflictException("This brand already has a knowledge entry with the same policy type and title.");
+      }
+      return;
+    }
+
+    const brand = await this.getBrand(brandId);
+    const duplicate = brand.policies.find(
+      (entry) =>
+        entry.id !== excludeEntryId &&
+        entry.type === type &&
+        entry.title.trim().toLowerCase() === normalizedTitle
+    );
+
+    if (duplicate) {
+      throw new ConflictException("This brand already has a knowledge entry with the same policy type and title.");
+    }
   }
 
   private async listBrandsFromDatabase(brandId?: string): Promise<Brand[]> {
