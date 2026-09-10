@@ -73,33 +73,7 @@ The result is not an auto-send chatbot. It is an agent-assist workflow where AI 
 
 ## Architecture Overview
 
-```text
-React + Vite Frontend
-        |
-        | HTTP JSON API
-        v
-NestJS Backend
-        |
-        | SQL queries
-        v
-PostgreSQL / Supabase
-        |
-        | brand-scoped policy retrieval
-        v
-RAG Context Builder
-        |
-        | strict prompt with customer, order, conversation, and KB context
-        v
-OpenAI-Compatible LLM
-        |
-        | suggested reply + confidence + guardrail
-        v
-Agent Review UI
-        |
-        | approve/edit/send
-        v
-Messages + AI Response Logs
-```
+![CX Reply Assistant architecture showing the React frontend, NestJS backend, AI reply flow, and PostgreSQL persistence](src/Complete%20Architecture.png)
 
 For the fuller architecture write-up, see [docs/architecture.md](docs/architecture.md).
 
