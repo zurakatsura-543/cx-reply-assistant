@@ -355,20 +355,6 @@ Runs linting for both workspaces.
 - `.env` must never be committed.
 - Local handoff notes such as `LOCAL_CODEX_HANDOFF.md` are intentionally ignored from Git.
 
-## Cost and Reliability Notes
-
-- The backend can retain provider usage metadata for cost and debugging analysis.
-- The visible UI hides provider details to keep the user experience clean.
-- The app has deterministic fallback generation so demos do not fail when an AI provider is unavailable.
-- Guardrails run before model generation for sensitive policy cases.
-- AI responses require human approval before being sent.
-
-For the written cost/debugging scenario answer, see [docs/ai-cost-debugging.md](docs/ai-cost-debugging.md).
-
-For leadership and ownership answers, see [docs/leadership-ownership.md](docs/leadership-ownership.md).
-
-For the demo plan and final submission checklist, see [docs/demo-video-script.md](docs/demo-video-script.md) and [docs/final-submission-checklist.md](docs/final-submission-checklist.md).
-
 ## Assessment Alignment
 
 This project directly addresses the assessment goals:
