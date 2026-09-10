@@ -6,11 +6,9 @@ This project is a full-stack customer experience reply assistant for ecommerce s
 
 ## Live Links
 
-- Frontend: `https://cx-reply-assistant-web.vercel.app`
-- Backend API: `https://cx-reply-assistant-api.onrender.com/api`
-- GitHub Repository: `https://github.com/zurakatsura-543/cx-reply-assistant`
-- Architecture Document: `https://example.com/cx-reply-assistant-architecture`
-- Demo Video: `https://example.com/cx-reply-assistant-demo`
+- Frontend: [cx-reply-assistant-web.vercel.app](https://cx-reply-assistant-web.vercel.app)
+- Backend API: [cx-reply-assistant-api.onrender.com/api](https://cx-reply-assistant-api.onrender.com/api)
+- GitHub Repository: [zurakatsura-543/cx-reply-assistant](https://github.com/zurakatsura-543/cx-reply-assistant)
 
 ## Product Goal
 
@@ -74,10 +72,6 @@ The result is not an auto-send chatbot. It is an agent-assist workflow where AI 
 ## Architecture Overview
 
 ![CX Reply Assistant architecture showing the React frontend, NestJS backend, AI reply flow, and PostgreSQL persistence](src/Complete%20Architecture.png)
-
-For the fuller architecture write-up, see [docs/architecture.md](docs/architecture.md).
-
-For the Mermaid architecture diagram, see [docs/architecture-diagram.md](docs/architecture-diagram.md).
 
 ## How RAG Works
 
